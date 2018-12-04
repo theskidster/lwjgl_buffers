@@ -10,17 +10,15 @@ public class EntityTriangle extends Entity {
     public EntityTriangle() {
         this.vertices = new float[] {
             //position              //color
-             0.0f,  0.5f,  0.0f,    1.0f, 1.0f, 1.0f, //top
-            -0.5f, -0.5f,  0.0f,    0.0f, 0.0f, 0.0f, //left
-             0.5f, -0.5f,  0.0f,    0.5f, 0.5f, 0.5f, //right
+             0.0f,  0.5f,  0.0f,    0.5f, 0.0f, //top
+            -0.5f, -0.5f,  0.0f,    0.0f, 1.0f, //left
+             0.5f, -0.5f,  0.0f,    1.0f, 1.0f, //right
         };
         
         //this shape really doesnt need indices, but whatever we'll include them anyway.
         this.indices = new int[] {
             0, 1, 2
         };
-        
-        this.init();
     }
     
 }

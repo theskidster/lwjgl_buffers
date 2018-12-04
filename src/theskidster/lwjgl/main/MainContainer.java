@@ -1,7 +1,7 @@
 package theskidster.lwjgl.main;
 
 import java.io.*;
-import java.nio.FloatBuffer;
+import java.nio.*;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.BufferUtils;
@@ -12,6 +12,9 @@ import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.glBindVertexArray;
 import static org.lwjgl.opengl.GL30.glGenVertexArrays;
+import static org.lwjgl.stb.STBImage.STBI_rgb_alpha;
+import static org.lwjgl.stb.STBImage.stbi_load;
+import org.lwjgl.system.MemoryStack;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import theskidster.lwjgl.entity.EntityPyramid;
 import theskidster.lwjgl.entity.EntityTriangle;
@@ -30,6 +33,7 @@ public class MainContainer implements Runnable {
     private int errCode;
     private int prog;
     private int vao;
+    private int texID;
     
     private long context;
     
@@ -47,24 +51,18 @@ public class MainContainer implements Runnable {
     private FloatBuffer buffView = BufferUtils.createFloatBuffer(16);
     private FloatBuffer buffProj = BufferUtils.createFloatBuffer(16);
     
+    private ByteBuffer bb;
+    
     private Matrix4f matProj = new Matrix4f();
     
     private Vector3f camPos = new Vector3f(0.0f, 0.0f, 3.0f);
     private Vector3f camDir = new Vector3f(0.0f, 0.0f, -0.5f);
     private Vector3f camUp = new Vector3f(0.0f, 1.0f, 0.0f);
     
-    private Vector3f[] triPos = {
-        new Vector3f( 1.0f, 3.0f, -4.0f),
-        new Vector3f(-4.0f, 1.0f, -3.0f),
-        new Vector3f( 0.0f, 2.0f, -2.0f)
-    };
-    
-    private Vector3f[] pyrPos = {
-        new Vector3f( 0.0f,  0.0f,  0.0f),
-        new Vector3f( 5.0f,  3.0f, -4.0f),
-        new Vector3f(-3.0f,  2.0f, -5.0f),
-        new Vector3f(-4.0f, -2.0f, -9.0f),
-        new Vector3f( 4.0f, -2.0f, -2.0f)
+    private float offset[] = {
+        -1.0f,  0.0f,  0.0f,
+        -2.0f,  1.0f, -3.0f,
+         0.0f, -1.0f,  0.0f
     };
     
     private EntityTriangle e1;
@@ -159,6 +157,8 @@ public class MainContainer implements Runnable {
         
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
+        glEnableVertexAttribArray(2);
+        glEnableVertexAttribArray(3);
         
         glEnable(GL_DEPTH_TEST);
     }
@@ -172,8 +172,12 @@ public class MainContainer implements Runnable {
             .perspective((float) Math.toRadians(45.0), (float) WIDTH / HEIGHT, 0.1f, 64.0f)
             .get(buffProj));
         
-        //If this were a state machine, these would be placed in either an init method or a constructor
+        //If this were a state machine, the following lines would be placed in either an init method or a constructor
+        loadTexture("img_eye.png", 512, 512);
+        
         e1 = new EntityTriangle();
+        for(int i = 0; i < 3; i++) e1.instancedInit(offset);
+        
         e2 = new EntityPyramid();
         
         while(!glfwWindowShouldClose(context)) {
@@ -184,13 +188,15 @@ public class MainContainer implements Runnable {
                 .lookAt(camPos, camDir, camUp)
                 .get(buffView));
             
-            e1.bind();
+            e1.bindTextured();
+            e1.instancedBind();
                 glUniformMatrix4fv(glGetUniformLocation(prog, "uModel"), false, new Matrix4f()
-                    .translate(-1.0f, 0.0f, 0.0f)
                     .get(buffModel));
-            e1.render();
+                glUniform1i(glGetUniformLocation(prog, "uTexEnabled"), 1);
+            e1.instancedRender(6);
             
             e2.bind();
+                glUniform1i(glGetUniformLocation(prog, "uTexEnabled"), 0);
                 glUniformMatrix4fv(glGetUniformLocation(prog, "uModel"), false, new Matrix4f()
                     .translate(1.0f, 0.0f, 0.0f)
                     .get(buffModel));
@@ -224,6 +230,36 @@ public class MainContainer implements Runnable {
         }
         CharSequence src = sb.toString();
         return new Shader(type, src);
+    }
+    
+    /**
+     * Loading textures is a bit tricky in modern OpenGL, since we first need to manually allocate data for the buffer which
+     * holds the texture info, luckily STBI does most of the heavy lifting here and we just need to pass it the data we parsed
+     * from the file. Regardless, I'd recommend creating a texture class and grouping that inside an entity object, but for 
+     * this example having the load method here will work just fine since we only have one image.
+     * 
+     * @param fileName  - name of the file to load.
+     * @param width     - width of the image. (in pixels)
+     * @param height    - height of the image.
+     */
+    public void loadTexture(String fileName, int width, int height) {
+        try(MemoryStack ms = MemoryStack.stackPush()) {
+            IntBuffer w = ms.mallocInt(1);
+            IntBuffer h = ms.mallocInt(1);
+            IntBuffer c = ms.mallocInt(1);
+            
+            bb = stbi_load(getClass().getResource("/theskidster/lwjgl/assets/").toString().substring(6) + fileName, w, h, c, STBI_rgb_alpha);
+        }
+        
+        texID = glGenTextures();
+        glBindTexture(GL_TEXTURE_2D, texID);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bb);
     }
     
     /**
